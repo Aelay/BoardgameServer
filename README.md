@@ -1,0 +1,4 @@
+BoardgameServer
+===============
+
+Generic boardgame server.
