@@ -62,8 +62,11 @@ wsServer.on('request', function(request) {
     var connection = request.accept(null, request.origin); 
     // we need to know client index to remove them on 'close' event
     var index = clients.push(connection) - 1;
-    var userName = false;
-    var userColor = false;
+    var connected = false;
+    var userData = {
+        name: false,
+        color: false,
+    };
  
     console.log((new Date()) + ' Connection accepted.');
  
@@ -74,7 +77,19 @@ wsServer.on('request', function(request) {
     
     var messageHandlers = {};
     
-    messageHandlers['name'] = function(data) {
+    messageHandlers['userData'] = function(data) {
+        for(var index in data) {
+            userData[index] = data[index];
+            
+            if(index == 'name') {
+                userData['color'] = colors.shift();
+                connection.sendUTF(JSON.stringify({ type:'color', data: userData['color'] }));
+                connected = true;
+            }
+        }
+    };
+    
+    /*messageHandlers['name'] = function(data) {
         // remember user name
         userName = htmlEntities(data);
         // get random color and send it back to the user
@@ -82,18 +97,18 @@ wsServer.on('request', function(request) {
         connection.sendUTF(JSON.stringify({ type:'color', data: userColor }));
         console.log((new Date()) + ' User is known as: ' + userName
                     + ' with ' + userColor + ' color.');
-    };
+    };*/
     
     messageHandlers['message'] = function(data) {
         console.log((new Date()) + ' Received Message from '
-                    + userName + ': ' + data);
+                    + userData['name'] + ': ' + data);
         
         // we want to keep history of all sent messages
         var obj = {
             time: (new Date()).getTime(),
             text: htmlEntities(data),
-            author: userName,
-            color: userColor
+            author: htmlEntities(userData['name']),
+            color: userData['color']
         };
         history.push(obj);
         history = history.slice(-100);
@@ -106,7 +121,7 @@ wsServer.on('request', function(request) {
     };
 
     messageHandlers['default'] = function(data) {
-	console.log('Expected message', data);
+	console.log('Unexpected message', data);
     };
 
     // user sent some message
@@ -128,13 +143,13 @@ wsServer.on('request', function(request) {
  
     // user disconnected
     connection.on('close', function(connection) {
-        if (userName !== false && userColor !== false) {
+        if (connected) {
             console.log((new Date()) + " Peer "
                 + connection.remoteAddress + " disconnected.");
             // remove user from the list of connected clients
             clients.splice(index, 1);
             // push back user's color to be reused by another user
-            colors.push(userColor);
+            colors.push(userData['color']);
         }
     });
  
