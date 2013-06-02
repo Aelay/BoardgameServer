@@ -15,9 +15,35 @@ var http = require('http');
  * Global variables
  */
 // latest 100 messages
-var history = [ ];
+//var history = [ ];
 // list of currently connected clients (users)
 var clients = [ ];
+
+var rooms = {};
+
+function addRoom(name, data) {
+    if(rooms[name]) {
+        return;
+    }
+    
+    var room = {
+        clients: [],
+        lastUsed: (new Date()).getTime(),
+        history: [],
+        creator: null,
+        permanent: false
+    };
+    
+    for(var index in data) {
+        room[index] = data[index];
+    }
+    
+    rooms[name] = room;
+    
+    console.log('Added room ' + name);
+}
+
+addRoom('lobby', {permanent: true});
  
 /**
  * Helper function for escaping input strings
@@ -66,13 +92,25 @@ wsServer.on('request', function(request) {
     var userData = {
         name: false,
         color: false,
+        room: null
     };
+    
+    joinRoom('lobby');
  
     console.log((new Date()) + ' Connection accepted.');
  
-    // send back chat history
-    if (history.length > 0) {
-        connection.sendUTF(JSON.stringify( { type: 'history', data: history} ));
+    
+    
+    function joinRoom(roomName) {
+        if(rooms[roomName]) {
+            userData.room = rooms[roomName];
+            rooms[roomName].clients.push(connection);
+    
+            // send back chat history
+            if (userData.room.history.length > 0) {
+                connection.sendUTF(JSON.stringify({ type: 'history', data: userData.room.history }));
+            }
+        }
     }
     
     var messageHandlers = {};
@@ -103,25 +141,29 @@ wsServer.on('request', function(request) {
         console.log((new Date()) + ' Received Message from '
                     + userData['name'] + ': ' + data);
         
-        // we want to keep history of all sent messages
-        var obj = {
-            time: (new Date()).getTime(),
-            text: htmlEntities(data),
-            author: htmlEntities(userData['name']),
-            color: userData['color']
-        };
-        history.push(obj);
-        history = history.slice(-100);
-
-        // broadcast message to all connected clients
-        var json = JSON.stringify({ type:'message', data: obj });
-        for (var i=0; i < clients.length; i++) {
-            clients[i].sendUTF(json);
+        if(userData.room) {
+            // we want to keep history of all sent messages
+            var obj = {
+                time: (new Date()).getTime(),
+                text: htmlEntities(data),
+                author: htmlEntities(userData['name']),
+                color: userData['color']
+            };
+            userData.room.history.push(obj);
+            userData.room.history = userData.room.history.slice(-100);
+    
+            // broadcast message to all connected clients
+            var json = JSON.stringify({ type:'message', data: obj });
+            for (var i=0; i < clients.length; i++) {
+                clients[i].sendUTF(json);
+            }
+            
+            userData.room.lastUsed = (new Date()).getTime();
         }
     };
 
     messageHandlers['default'] = function(data) {
-	console.log('Unexpected message', data);
+	    console.log('Unexpected message', data);
     };
 
     // user sent some message
